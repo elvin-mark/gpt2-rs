@@ -1,5 +1,4 @@
 use ndarray::{Array1, Array2, Axis, s};
-use std::f32::consts::PI;
 
 pub struct MLP {
     pub c_fc_w: Array2<f32>,
@@ -16,8 +15,20 @@ pub struct Attention {
 }
 
 pub fn gelu(x: &Array2<f32>) -> Array2<f32> {
-    0.5 * x
-        * (1.0 + ((2.0 / PI).sqrt() * (x + 0.044715 * x.mapv(|e| e.powf(3.0)))).mapv(|e| e.tanh()))
+    const SQRT_2_OVER_PI: f32 = 0.79788456;
+
+    // Clone once to get owned memory
+    let mut output = x.clone();
+
+    // Perform all math in a single pass over the data
+    output.map_inplace(|val| {
+        let v = *val;
+        // Using v*v*v is even faster than powf(3)
+        let inner = SQRT_2_OVER_PI * (v + 0.044715 * v * v * v);
+        *val = 0.5 * v * (1.0 + inner.tanh());
+    });
+
+    output
 }
 
 pub fn softmax(x: &Array2<f32>) -> Array2<f32> {
@@ -80,7 +91,7 @@ pub fn mha(x: &Array2<f32>, attn: &Attention, n_head: usize) -> Array2<f32> {
 
     let qkv = linear(x, &attn.c_attn_w, &attn.c_attn_b);
 
-    let (q, k, v) = split_qkv(&qkv, n_head);
+    let (q, k, v) = split_qkv(&qkv);
 
     let q_heads = split_into_heads(&q, n_head);
     let k_heads = split_into_heads(&k, n_head);
@@ -97,7 +108,7 @@ pub fn mha(x: &Array2<f32>, attn: &Attention, n_head: usize) -> Array2<f32> {
     linear(&concat_output, &attn.c_proj_w, &attn.c_proj_b)
 }
 
-pub fn split_qkv(qkv: &Array2<f32>, n_head: usize) -> (Array2<f32>, Array2<f32>, Array2<f32>) {
+pub fn split_qkv(qkv: &Array2<f32>) -> (Array2<f32>, Array2<f32>, Array2<f32>) {
     let (_, cols) = qkv.dim();
     let d_model = cols / 3;
 
